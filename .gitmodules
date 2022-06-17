@@ -4,3 +4,6 @@
 [submodule "traitlets"]
 	path = pylib/traitlets
 	url = https://github.com/ignition-kernel/traitlets.git
+[submodule "ipykernel"]
+	path = pylib/ipykernel
+	url = https://github.com/ignition-kernel/ipykernel.git
