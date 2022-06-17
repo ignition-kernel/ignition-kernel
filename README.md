@@ -14,8 +14,8 @@ Automagically convert newer modules to Python 2.7 compatible code. This is neede
 
 ## `pylib`
 
-Ignition will need these libraries to work.
+Ignition will need these libraries to work `ipykernel`.
 
 ### `traitlets`
 
-...
+

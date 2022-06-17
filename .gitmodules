@@ -1,3 +1,6 @@
 [submodule "lib3to6"]
 	path = tools/lib3to6
 	url = https://github.com/ignition-kernel/lib3to6.git
+[submodule "traitlets"]
+	path = pylib/traitlets
+	url = https://github.com/ignition-kernel/traitlets.git
