@@ -15,12 +15,16 @@ def get_identifier_at_cursor(code_text, cursor_pos):
 	"""
 	Return the chunk of text in the code that the cursor lays upon.
 	"""
+	# if we're on the entry of a calling context, return that instead
+	if code_text[cursor_pos:-30:-1].strip().startswith('('):
+	    cursor_pos -= (1 + code_text[cursor_pos:-30:-1].index('('))
+	
 	return (
 		(	# read left...
 			re.findall(r'^((?:\w|[_.])+)', code_text[cursor_pos::-1]) or ['']
 		)[0][::-1]
 		+ ( # and append the remainder to the right
-			re.findall(r'(\w+|[_]+)', code_text[cursor_pos+1:]) or ['']
+			re.findall(r'^(\w+|[_]+)', code_text[cursor_pos+1:]) or ['']
 		)[0]
 	)
 
