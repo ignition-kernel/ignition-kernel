@@ -17,9 +17,10 @@ from jupyter_client.connect import KernelConnectionInfo, LocalPortCache
 from jupyter_client.localinterfaces import is_local_ip, local_ips
 
 from typing import Any, Dict, List, Optional, Union
-from traitlets.config import Instance, LoggingConfigurable, Unicode
+from traitlets.config import Instance, LoggingConfigurable, Unicode, Bool
 
-import json, sys
+import json, sys, zmq
+from datetime import datetime, timedelta
 import signal
 import requests
 import keyring
@@ -55,7 +56,10 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
 
     ignition_kernel_id: str = Unicode(None, allow_none=True)
 
-    
+    # behave like a Designer session's scripting, or like an async gateway script
+    run_through_trial: bool = Bool(True, config=True)
+
+
     ## TODO: port caching for preventing messy race stuff
     # for compatibility with the usual usage
     ports_cached = False
@@ -103,14 +107,22 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
         If running, None is returned, otherwise the process's integer-valued exit code is returned.
         This method is called from :meth:`KernelManager.is_alive`.
         """
-        response = requests.head(self.ignition_kernel_endpoint, auth=self._requests_keyring_authentication)
-        # Only deal with success or failure
-        if response.status_code == 200:
-            return
+        if self.heartbeat_stream:
+            self.heartbeat_stream.send_string('Ping', zmq.NOBLOCK)
+            if self.last_heartbeat < (datetime.now() - timedelta(minutes=5)):
+                return -3
+            else:
+                return
         else:
-            # I think negative codes are application crash signals?
-            # so this 
-            return -response.status_code
+            response = requests.head(self.ignition_kernel_endpoint, auth=self._requests_keyring_authentication)
+            # Only deal with success or failure
+            if response.status_code == 200 or (self.run_through_trial and response.status_code == 402):
+                self.last_heartbeat = datetime.now()
+                return
+            else:
+                # I think negative codes are application crash signals?
+                # so this 
+                return -response.status_code
 
 
     async def wait(self) -> Optional[int]:
@@ -222,7 +234,8 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
             for port in ports:
                 lpc.return_port(port)
 
-
+            if self.heartbeat_stream and not self.heartbeat_stream.closed():
+                self.heartbeat_stream.close()
 
 
 
@@ -317,6 +330,9 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
 
         response = requests.post(self.ignition_endpoint, json=kernel_config_payload, auth=self._requests_keyring_authentication)
 
+        if response.status_code == 402:
+            raise RuntimeError('Ignition gateway is in trial. Reset trial to enable WebDev.\nGateway at %s' % (self.host_url,))
+
         connection_info = response.json()
 
         self.ignition_kernel_id = connection_info.pop('ignition_kernel_id')
@@ -339,7 +355,24 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
         This method is called from `KernelManager.post_start_kernel()` as part of its
         start kernel sequence.
         """
-        pass
+        kernel_manager = self.parent
+        if kernel_manager:
+            # context = kernel_manager.context
+            # socket = context.socket(zmq.REQ)
+            # socket.setsockopt(zmq.RCVTIMEO, 5000) # 5 second timeout
+            # socket.linger
+            # socket.connect(kernel_manager._make_url('hb'))
+
+            self.heartbeat_stream = kernel_manager.connect_hb()
+            def heartbeat_acked(msg, provisioner=self):
+                if msg:
+                    provisioner.last_heartbeat = datetime.now()
+            self.heartbeat_stream.on_recv(heartbeat_acked)
+        else:
+            self.heartbeat_stream = None
+        self.last_heartbeat = datetime.now()
+
+
 
 
     async def get_provisioner_info(self) -> Dict:
