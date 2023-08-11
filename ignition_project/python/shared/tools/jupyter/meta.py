@@ -30,4 +30,3 @@ def get_gateway_hyperlink(endpoint='web/status/sys.overview', force_ssl=False):
 	
 	return '%(protocol)s://%(address)s:%(port)s/%(endpoint)s' % url_parts
 
-

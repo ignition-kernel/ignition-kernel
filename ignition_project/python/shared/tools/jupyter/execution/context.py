@@ -53,7 +53,13 @@ class ExecutionContext(object):
 	
 	@property
 	def _context(self):
-		return self._context_sys, self.python_state_globals, self.python_state_locals
+		return {
+			'captured_sys': self._context_sys, 
+			'global_context': self.python_state_globals,
+			'local_context': self.python_state_locals,
+			# show where the next execution goes
+			'execution_location': '<Jupyter In[%d]>' % (self.execution_count + 1,),
+		}
 	
 	def destroy(self):
 		self.python_state_locals.clear()
@@ -64,7 +70,7 @@ class ExecutionContext(object):
 
 
 	def execute(self, code, store_history=True):
-		with Executor(*self._context) as executor:
+		with Executor(**self._context) as executor:
 			executor.execute(code)
 		
 		if store_history:

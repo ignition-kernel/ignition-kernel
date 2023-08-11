@@ -11,13 +11,21 @@ logger = shared.tools.jupyter.logging.Logger()
 import re
 
 
-def get_identifier_at_cursor(code_text, cursor_pos):
+def get_identifier_at_cursor(code_text, cursor_pos,
+		prefer_calling_context=False,
+		perfer_key_context=False,
+	):
 	"""
 	Return the chunk of text in the code that the cursor lays upon.
 	"""
 	# if we're on the entry of a calling context, return that instead
-	if code_text[cursor_pos:-30:-1].strip().startswith('('):
-	    cursor_pos -= (1 + code_text[cursor_pos:-30:-1].index('('))
+	# is this info request on a function call?
+	if prefer_calling_context and re.match(r"""^[^'"]*['"]{0,3}\(""", code_text[cursor_pos:-30:-1]):
+		cursor_pos -= (1 + code_text[cursor_pos:-30:-1].index('('))
+	
+	# is this autocompleting a dict?
+	elif perfer_key_context and re.match(r"""^[^'"]*['"]{0,3}\[""", code_text[cursor_pos:-30:-1]):
+		cursor_pos -= (1 + code_text[cursor_pos:-30:-1].index('['))
 	
 	return (
 		(	# read left...
@@ -29,11 +37,14 @@ def get_identifier_at_cursor(code_text, cursor_pos):
 	)
 
 
-def get_object_from_cursor(code_text, cursor_pos, global_scope=None, local_scope=None):
+def get_object_from_cursor(code_text, cursor_pos, global_scope=None, local_scope=None, 
+		prefer_calling_context=False,
+		perfer_key_context=False,
+	):
 	"""
 	Return the object under the cursor given the scopes provided, if any.
 	"""
-	object_identifier = get_identifier_at_cursor(code_text, cursor_pos)
+	object_identifier = get_identifier_at_cursor(code_text, cursor_pos, prefer_calling_context, perfer_key_context)
 	
 	return get_object_from_identifier(object_identifier, global_scope, local_scope)
 
@@ -56,7 +67,7 @@ def get_object_from_identifier(object_identifier, global_scope=None, local_scope
 		try:
 			obj_root = (global_scope or {})[identifier_root]
 		except KeyError:
-			raise NameError
+			raise NameError(identifier_root)
 	
 	assert obj_root
 	
@@ -78,7 +89,52 @@ def get_object_from_identifier(object_identifier, global_scope=None, local_scope
 		return obj_root, ''
 
 
-def match_references(object_identifier, global_scope=None, local_scope=None):
+def gather_reordered_attributes(thing, 
+		include_private=False, 
+		include_dunders=True, 
+		dunders_last=True,
+		private_last=True,
+	):
+	attributes = []
+	dunders = []
+	privates = []
+	
+	try:
+		attribute_listing = sorted(dir(thing))
+	except Exception as error:
+		try:
+			logger.warn('Object %(thing)r for attribute request is broken; could not dir() it!')
+		except Exception:
+			logger.warn('Object for attribute request is broken; could not dir() it!')
+		return []
+	
+	for attribute in attribute_listing:
+		if attribute.startswith('__'):
+			dunders.append(attribute)
+		elif attribute.startswith('_'):
+			privates.append(attribute)
+		else:
+			attributes.append(attribute)
+	
+	if include_dunders:
+		if dunders_last:
+			attributes = attributes + dunders
+		else:
+			attributes = dunders + attributes
+
+	if include_private:
+		if private_last:
+			attributes = attributes + privates
+		else:
+			attributes = privates + attributes
+	
+	return attributes
+
+
+def match_references(object_identifier, 
+		global_scope=None, local_scope=None,
+		return_keys_if_dict=False,
+	):
 	"""
 	Return things that might fill out the identifier (if incomplete) given the scopes.
 	
@@ -100,26 +156,28 @@ def match_references(object_identifier, global_scope=None, local_scope=None):
 		])
 	
 	if unmatched_identifier_remainder:
-		print unmatched_identifier_remainder
 		partial_identifier = unmatched_identifier_remainder
 		matched_identifier = object_identifier[:-len(partial_identifier)-1] # skips the final '.' to be added later for clarity
 		
 		matches = []
-		for attribute in sorted(dir(obj_root)):
+		for attribute in gather_reordered_attributes(obj_root):
 			# exact match - grab all of the attributes of _that_
 			if attribute == partial_identifier:
-				for sub_attribute in sorted(dir(getattr(obj_root, attribute))):
+				for sub_attribute in gather_reordered_attributes(getattr(obj_root, attribute)):
 					matches.append(matched_identifier + '.' + attribute + '.' + sub_attribute)
 			# partial match - add anything that looks like it
 			elif attribute.startswith(partial_identifier):
 				matches.append(matched_identifier + '.' + attribute)
 		return matches
 	else:
-		matched_identifier = object_identifier
-		if object_identifier.endswith('.'):  # make sure no trialing '.'
-			matched_identifier = matched_identifier[:-1]
-		return sorted([
-			matched_identifier + '.' + attribute
-			for attribute
-			in sorted(dir(obj_root))
-		])
+		if return_keys_if_dict and isinstance(obj_root, dict):
+			return sorted(obj_root)
+		else:
+			matched_identifier = object_identifier
+			if object_identifier.endswith('.'):  # make sure no trialing '.'
+				matched_identifier = matched_identifier[:-1]
+			return [
+				matched_identifier + '.' + attribute
+				for attribute
+				in gather_reordered_attributes(obj_root)
+			]

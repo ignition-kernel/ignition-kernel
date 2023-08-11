@@ -22,12 +22,13 @@ def complete_request(kernel, message):
 	
 	# TODO: AST the code and combine with what we find in kernel.session tokens
 	
-	object_identifier = get_identifier_at_cursor(code_text, cursor_pos)
+	object_identifier = get_identifier_at_cursor(code_text, cursor_pos, perfer_key_context=True)
 	
 	name_references = match_references(
 		object_identifier,
 		execution_context.python_state_globals,
 		execution_context.python_state_locals,
+		return_keys_if_dict=True,
 	)
 	
 	replacement_start = cursor_pos - len(object_identifier)
@@ -35,14 +36,14 @@ def complete_request(kernel, message):
 		replacement_start = 0
 	
 	references_metadata = {}
-	for identifier in name_references:
-		ref = get_object_from_identifier(identifier, 
-			execution_context.python_state_globals,
-			execution_context.python_state_locals,
-			)
-		references_metadata[identifier] = {
-			'label': 'ASDF',
-		}
+#	for identifier in name_references:
+#		ref = get_object_from_identifier(identifier, 
+#			execution_context.python_state_globals,
+#			execution_context.python_state_locals,
+#			)
+#		references_metadata[identifier] = {
+#			'label': 'ASDF',
+#		}
 	
 	with kernel.shell_message('complete_reply', message) as reply:
 		reply.content = {
