@@ -25,6 +25,7 @@ import signal
 import requests
 import keyring
 from urllib.parse import urljoin
+import asyncio
 
 
 
@@ -59,6 +60,8 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
     # behave like a Designer session's scripting, or like an async gateway script
     run_through_trial: bool = Bool(True, config=True)
 
+
+    HEARTBEAT_TIMEOUT = timedelta(minutes=5)
 
     ## TODO: port caching for preventing messy race stuff
     # for compatibility with the usual usage
@@ -108,11 +111,12 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
         This method is called from :meth:`KernelManager.is_alive`.
         """
         if self.heartbeat_stream:
-            self.heartbeat_stream.send_string('Ping', zmq.NOBLOCK)
-            if self.last_heartbeat < (datetime.now() - timedelta(minutes=5)):
+            # react to the last heartbeat
+            if self.last_heartbeat < (datetime.now() - self.HEARTBEAT_TIMEOUT):
                 return -3
-            else:
-                return
+            # send a ping; when we come back 'round we'll verify it
+            self.heartbeat_stream.send_string('Ping', zmq.NOBLOCK)
+            return
         else:
             response = requests.head(self.ignition_kernel_endpoint, auth=self._requests_keyring_authentication)
             # Only deal with success or failure
@@ -140,7 +144,7 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
 
         # pause until Ignition replies that the kernel is gone
         while await self.poll() is None:
-            await asyncio.sleep(0.100)
+            await asyncio.sleep(0.050)
 
         # Ignition cleans up the kernel on our behalf
         self.ignition_kernel_id = None
@@ -169,48 +173,52 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
 
         # assert signum in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL), "Non-death signals not yet supported."
 
-        assert signum == signal.SIGTERM, "Non-SIGTERM signals not yet supported."
+        # assert signum == signal.SIGTERM, "Non-SIGTERM signals not yet supported."
 
-        response = requests.delete(self.ignition_kernel_endpoint, auth=self._requests_keyring_authentication) #, signal=signum)
+        response = requests.delete(self.ignition_kernel_endpoint, auth=self._requests_keyring_authentication,
+                                   json={'signal': signum})
+
         assert response.status_code == 200, "Got %r: %r" % (response.status_code, response)
+
+        # regardless of how it worked, the old execution context is gone
+        self.last_heartbeat -= (2* self.HEARTBEAT_TIMEOUT)
+
         return
 
 
     async def kill(self, restart: bool = False) -> None:
         """
         Kill the kernel in Ignition. 
-        TODO: Interrupt all associated threads via SCRAM
-
-        TODO: Restart will be respected and will instead reload the Python context in Ignition.
 
         Kill the provisioner and optionally restart.
         """
         if self.ignition_kernel_id is None:
             return
 
-        # self.send_signal(signal.SIGKILL)
-        await self.send_signal(signal.SIGTERM)
-
+        # if simply a restart, don't tear down the kernel
         if restart:
-            raise NotImplementedError
+            # the Ignition kernel is managed by messages, not process directives
+            await self.send_signal(0)
+        else:
+            await self.send_signal(-1)
+
+
 
     async def terminate(self, restart: bool = False) -> None:
         """
         Terminate the kernel in Ignition.
-        TODO: Gracefully tear down the kernel in Ignition.
-
-        TODO: Restart will be respected and will instead reload the Python context in Ignition.
 
         Terminate the provisioner and optionally restart.
         """
         if self.ignition_kernel_id is None:
             return
 
-        await self.send_signal(signal.SIGTERM)
-
+        # if simply a restart, don't tear down the kernel
         if restart:
-            raise NotImplementedError
-
+            # the Ignition kernel is managed by messages, not process directives
+            await self.send_signal(0)
+        else:
+            await self.send_signal(signal.SIGTERM)
 
 
 
@@ -366,7 +374,11 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
             self.heartbeat_stream = kernel_manager.connect_hb()
             def heartbeat_acked(msg, provisioner=self):
                 if msg:
-                    provisioner.last_heartbeat = datetime.now()
+                    if msg[0].lower() in ('ping', 'pong'):
+                        provisioner.last_heartbeat = datetime.now()
+                    # this won't be used, but illustrates how we'll signal the death of a kernel in poll()
+                    if msg[0].lower() in ('', 'restart', 'gone',):
+                        provisioner.last_heartbeat -= (2* self.HEARTBEAT_TIMEOUT)
             self.heartbeat_stream.on_recv(heartbeat_acked)
         else:
             self.heartbeat_stream = None
