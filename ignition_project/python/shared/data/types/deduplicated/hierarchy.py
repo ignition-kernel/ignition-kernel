@@ -2,8 +2,7 @@
 	Helpers to store, encode, and compare hierarchies.
 	
 """
-
-from shared.data.types.memo import EnumeratedLookup
+import re
 
 
 
@@ -130,7 +129,17 @@ class NamespacedHierarchy(Hierarchy):
 	_NAMESPACE_PREFIX = ''
 	_NAMESPACE_SUFFIX = ': '
 
-	def __new__(cls, namespace, path):
+	_NAMESPACE_PATTERN = None
+	
+	def __new__(cls, path, namespace=None):
+		if namespace is None:
+			# late eval so we don't have to figure this out via metaclass nonsense
+			if cls._NAMESPACE_PATTERN is None:
+				cls._NAMESPACE_PATTERN = re.compile(r'(?:%s(.*?)%s)?(.*)' % (
+			        		re.escape(cls._NAMESPACE_PREFIX),re.escape(cls._NAMESPACE_SUFFIX),))
+		
+			namespace, path = cls._NAMESPACE_PATTERN.match(path).groups()
+        
 		if not namespace in cls._ROOT:
 			entry = cls._init_new(identifier=namespace)
 			cls._ROOT[namespace] = entry
@@ -160,7 +169,7 @@ class NamespacedHierarchy(Hierarchy):
 
 def _run_tests():
 	
-	from shared.data.types.hierarchy import Hierarchy
+	from shared.data.types.deduplicated.hierarchy import Hierarchy
 
 
 	cp1 = Hierarchy('root -> trunk -> branch a -> leaf a')
