@@ -80,15 +80,7 @@ class ExecutionResults(object):
 	
 	@property
 	def formatted_traceback(self):
-		import traceback
-		if self.exception is None:
-			return ''
-		if isinstance(self.exception, Exception):
-			return ''.join(traceback.format_exception(*self.error))
-		elif isinstance(self.exception, JavaException):
-			return java_full_stack(self.exception)
-		else:
-			return repr(self.exception)
+		return formatted_traceback(self.exception, self.traceback)
 	
 	
 	def __str__(self):
@@ -117,6 +109,5 @@ class ExecutionResults(object):
 			'ERR' if self.stderr else '',
 			'Obj' if self._      else '',
 		'>'] if x])
-
 
 

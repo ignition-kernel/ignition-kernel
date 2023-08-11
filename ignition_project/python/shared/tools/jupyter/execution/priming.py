@@ -38,4 +38,3 @@ def metatools_startup(execution_context):
 	# IPython-y things
 	ec_locals['In'] = ResultHistory(execution_context, 'code')
 	ec_locals['Out'] = ResultHistory(execution_context, 'display_object')
-

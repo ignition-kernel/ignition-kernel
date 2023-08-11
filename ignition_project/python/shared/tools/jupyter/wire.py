@@ -11,7 +11,8 @@
 logger = shared.tools.jupyter.logging.Logger()
 
 from shared.tools.jupyter.zmq import ZMsg
-from shared.data.types.dictclass import PassThruDict
+from shared.data.types.adhoc import AdHocObject
+
 import json
 import hmac, hashlib
 from uuid import uuid4
@@ -30,30 +31,10 @@ def sign(key, signature_scheme, entries):
 
 
 
-class AdHocObject(PassThruDict):
-	"""A convenient way of prototyping and building up entries in the wire message."""
-
-	def asdict(self):
-		self._cull_empty()
-		return dict((key, value.asdict() if isinstance(value, AdHocObject) else value)
-			for key, value in self._dict.items())
-	
-	def serialize(self):
-		return serialize_dictionary(self.asdict())
-	
-	def deserialize(self, some_string):
-		self._dict = deserialize_dictionary(some_string)
-		return self
-
-
-
 def serialize_dictionary(some_dict, assume_ad_hoc=False):
-	if 'comms_id' in some_dict:
-		logger.warn('Potential fault: %(some_dict)r')
-
 	if assume_ad_hoc or isinstance(some_dict, AdHocObject):
-		if hasattr(some_dict, 'asdict'):
-			some_dict = some_dict.asdict()
+		if hasattr(some_dict, '_asdict'):
+			some_dict = some_dict._asdict()
 	
 	return json.dumps(some_dict, sort_keys=True, separators=(',',':'),
 					  default = lambda obj: repr(obj),
@@ -61,9 +42,11 @@ def serialize_dictionary(some_dict, assume_ad_hoc=False):
 
 
 def deserialize_dictionary(some_string, make_ad_hoc=False):
+	somejson = json.loads(some_string.decode('UTF-8'))
 	if make_ad_hoc:
-		return AdHocObject().deserialize(some_string)
-	return json.loads(some_string.decode('UTF-8'))
+		return AdHocObject(somejson)
+	else:
+		return somejson
 
 
 

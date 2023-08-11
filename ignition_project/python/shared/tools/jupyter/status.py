@@ -32,4 +32,3 @@ def declare_idle(kernel, message=None):
 	update_status('idle', kernel, message)
 
 
-

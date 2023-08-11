@@ -4,6 +4,7 @@ from java.lang import Exception as JavaException
 import java.nio.channels.ClosedSelectorException as JavaNioChannelsClosedSelectorException
 from org.apache.commons.lang3.exception import ExceptionUtils
 from org.apache.commons.lang3 import SystemUtils
+import traceback
 
 
 from shared.tools.jupyter.zmq import ZMQException, ZError
@@ -11,7 +12,7 @@ from shared.tools.jupyter.zmq import ZMQException, ZError
 
 
 __all__ = [
-	'python_full_stack', 'java_full_stack',
+	'python_full_stack', 'java_full_stack', 'formatted_traceback',
 	'JavaException', 'JavaNioChannelsClosedSelectorException',
 	'ZMQException', 'ZError',
 
@@ -34,3 +35,14 @@ def python_full_stack():
 
 def java_full_stack(error):
 	return ExceptionUtils.getStackTrace(error)
+	
+	
+def formatted_traceback(exception, exc_tb=None):
+	if exception is None:
+		return ''
+	if isinstance(exception, Exception): # use the output of sys.exc_info()
+		return ''.join(traceback.format_exception(type(exception), exception, exc_tb))
+	elif isinstance(exception, JavaException):
+		return java_full_stack(exception)
+	else:
+		return repr(exception)

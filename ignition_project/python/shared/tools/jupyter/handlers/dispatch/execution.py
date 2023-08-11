@@ -77,7 +77,7 @@ def execute_request(kernel, message):
 			}
 	
 	# reply with the last display object, if any
-	if kernel.session[-1]._:
+	if kernel.session[-1]._ is not None:
 		with kernel.iopub_broadcast('execute_result', message) as reply:
 			reply.content = {
 		        'execution_count': kernel.session.execution_count,
@@ -121,4 +121,3 @@ def execute_request(kernel, message):
 EXECUTION_DISPATCH = {
 	'execute_request': execute_request,
 }
-

@@ -32,6 +32,7 @@ def inspect_request(kernel, message):
 				code_text, cursor_pos,
 				execution_context.python_state_globals,
 				execution_context.python_state_locals,
+				prefer_calling_context=True,
 			)
 		obj_data['text/plain'] = pdir(obj, directPrint=False)
 		
@@ -78,5 +79,4 @@ INSPECTION_DISPATCH = {
 #            if not lines:
 #                lines.append("<empty docstring>")
 #            data["text/plain"] = "\n".join(lines)
-
 
