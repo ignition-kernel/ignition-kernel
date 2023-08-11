@@ -10,7 +10,7 @@ from shared.tools.jupyter.logging import DEFAULT_LOGGING_LEVEL
 
 from random import choice
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 import string
 import json
 from time import sleep
@@ -60,6 +60,8 @@ def getFirstObjectFromThreadFrame(thread_handle, object_name):
 		raise NameError('The object %s is not local to %r' % (object_name, thread_handle,))
 
 
+class CardiacArrest(RuntimeError): pass
+
 
 
 class MetaKernelContext(type):
@@ -83,7 +85,7 @@ class MetaKernelContext(type):
 			return getFirstObjectFromThreadFrame(thread_handle, 'kernel')
 #			return getFromThreadScope(thread_handle, 'kernel')
 		except:
-			raise KeyError("Kernel overwatch thread not found for id %s." % (kernel_id,))
+			raise KeyError("Kernel id %s not found." % (kernel_id,))
 			
 	@property
 	def _meta_all_threads(cls):
@@ -172,6 +174,9 @@ class KernelContext(
 		
 		'traps', # bucket for signals to trap debug loggers and such
 		
+		# kernel auto-cleanup when orphaned
+		'last_heartbeat', 'cardiac_arrest_timeout',
+		
 		# holding attributes for core functionality across the five main threads
 		'overwatch_thread', # 'lifeline_thread',
 		'shell_port',    'iopub_port',       'stdin_port',    'control_port',   'heartbeat_port',
@@ -227,6 +232,9 @@ class KernelContext(
 			'live_reload': False,
 			'interrupted': False,
 			
+			# set to None 
+			'cardiac_arrest_timeout': timedelta(minutes=15),
+			
 			# prime for first load
 #			'shell_handler':     'shared.tools.jupyter.handlers.shell.message_handler',
 #			'iopub_handler':     'shared.tools.jupyter.handlers.iopub.message_handler',
@@ -255,6 +263,8 @@ class KernelContext(
 			except Exception as error:
 				logger.error('Slot failed to get settings: %(slot)r')
 				raise error
+		
+		self.last_heartbeat = datetime.now()
 		
 		self.traps = {}
 			
@@ -300,6 +310,12 @@ class KernelContext(
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		self.tear_down()
 	
+	
+	def check_pulse(self):
+		if self.cardiac_arrest_timeout:
+			if self.last_heartbeat < (datetime.now() - self.cardiac_arrest_timeout):
+				raise CardiacArrest
+
 
 	def SCRAM(self):
 		self.logger.warn(">>> Scramming Kernel %(kernel_id)s <<<" % self)
@@ -379,12 +395,6 @@ class KernelContext(
 		
 		self.setup_loggers()
 		
-#		self.loggers[None].debug(
-#			' || '.join('tcp.port == %d' % self[role + '_port'] 
-#						for role in self._canonical_roles
-#			)
-#		)
-		
 		self.new_execution_session()
 		
 		sleep(0.25)
@@ -396,6 +406,10 @@ class KernelContext(
 
 	def new_execution_session(self):
 		self.session = ExecutionContext(self)
+		try:
+			self.heartbeat_socket.send('restart')
+		except:
+			pass # maybe not set up yet
 
 
 	# runtime user overrides
@@ -436,6 +450,7 @@ class KernelContext(
 				if self.zpoller.isReadable(socket):
 					# heartbeat is first, and is the only raw payload that isn't a message
 					if role == 'heartbeat':
+						#self.logger.info('Heartbeat    C: ')
 						payload = socket.recv()
 						self[role + '_handler'](self, payload)
 					else:
@@ -499,6 +514,7 @@ class KernelContext(
 	
 	@property
 	def is_interrupted(self):
+		self.check_pulse()
 		return self.interrupted
 	
 	
@@ -597,7 +613,7 @@ class KernelContext(
 def spawn_kernel(**kernel_init_kwargs):
 	if not kernel_init_kwargs:
 		kernel_init_kwargs['kernel_id']= random_id()
-	thread_handle = launch_kernel(**kernel_init_kwargs)
+	thread_handle = kernel_event_loop(**kernel_init_kwargs)
 	sleep(0.45)
 	try:
 		return getFirstObjectFromThreadFrame(thread_handle, 'kernel')
@@ -609,7 +625,7 @@ def spawn_kernel(**kernel_init_kwargs):
 
 
 @async(name="Jupyter-Kernel-XXXX-Overwatch")
-def launch_kernel(**kernel_init_kwargs):
+def kernel_event_loop(**kernel_init_kwargs):
 	with KernelContext(**kernel_init_kwargs) as kernel:
 		kernel.logger.info('Overwatch holding thread started.')
 		try:
@@ -619,6 +635,8 @@ def launch_kernel(**kernel_init_kwargs):
 #				sleep(kernel.lingering_delay)
 		except KeyboardInterrupt:
 			kernel.logger.info('Overwatch interrupted. Halting.')
+		except CardiacArrest:
+			kernel.logger.warn("Kernel lost Jupyter's kernel manager's heartbeat. Exiting.")
 
 
 

@@ -8,9 +8,6 @@ class AdHocObject(object):
 
 	Note that strictness is a massive side effect. If a AHO is introduced into another that's
 	set to be strict then the former *becomes* strict. Think of strictness as somewhat viral.
-	
-	WARNING: NO RECURSION GUARDRAILS - Don't assign things to themselves.
-		This is made for configuration setup, it's not a real object paradigm!
 	"""
 	__slots__ = [
 		'_dict', '_strict', 
@@ -32,14 +29,7 @@ class AdHocObject(object):
 					self._signal_dirty()
 		else:
 			self._dict = initial_source or {}
-
-
-	def copy(self):
-		"""Make a copy of the object. WARNING: NO RECURSION GUARDRAILS"""
-		# note that this orphans the copy, since, well, it'd be insane to keep the parent
-		return type(self)(initial_source=deepcopy(self._asdict()), strict=self._strict, parent=None)
-
-
+				
 	# GET
 	def __getitem__(self, key):
 		return self._pass_thru_getter(key)
