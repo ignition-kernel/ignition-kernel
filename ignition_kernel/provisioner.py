@@ -374,10 +374,11 @@ class IgnitionKernelProvisioner(KernelProvisionerBase):
             self.heartbeat_stream = kernel_manager.connect_hb()
             def heartbeat_acked(msg, provisioner=self):
                 if msg:
-                    if msg[0].lower() in ('ping', 'pong'):
+                    reply = msg[0].decode('utf-8').lower()
+                    if reply in ('ping', 'pong'):
                         provisioner.last_heartbeat = datetime.now()
                     # this won't be used, but illustrates how we'll signal the death of a kernel in poll()
-                    if msg[0].lower() in ('', 'restart', 'gone',):
+                    if reply in ('', 'restart', 'gone',):
                         provisioner.last_heartbeat -= (2* self.HEARTBEAT_TIMEOUT)
             self.heartbeat_stream.on_recv(heartbeat_acked)
         else:
