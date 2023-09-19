@@ -1,0 +1,6 @@
+[submodule "ignition-project"]
+	path = ignition-project
+	url = https://github.com/ignition-kernel/ignition-project.git
+[submodule "kernel-provisioner"]
+	path = kernel-provisioner
+	url = https://github.com/ignition-kernel/kernel-provisioner.git
